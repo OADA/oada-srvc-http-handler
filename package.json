@@ -1,0 +1,31 @@
+{
+  "name": "oada-srvc-http-handler",
+  "version": "1.0.0",
+  "description": "",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/OADA/oada-srvc-http-handler.git"
+  },
+  "author": "awlayton",
+  "license": "Apache-2.0",
+  "bugs": {
+    "url": "https://github.com/OADA/oada-srvc-http-handler/issues"
+  },
+  "homepage": "https://github.com/OADA/oada-srvc-http-handler#readme",
+  "dependencies": {
+    "bluebird": "^3.5.0",
+    "body-parser": "^1.17.1",
+    "cors": "^2.8.3",
+    "express": "^4.15.2",
+    "express-promise": "^0.4.0",
+    "kafka-node": "^1.6.0",
+    "oada-error": "^1.1.1",
+    "uuid": "^3.0.1",
+    "well-known-json": "^0.2.0"
+  }
+}
