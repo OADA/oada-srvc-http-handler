@@ -9,12 +9,12 @@ var body_parser = require('body-parser');
 //var bunyan = require('bunyan');
 //var content_type_parser = require('content-type');
 var cors = require('cors');
-var fs = require('fs');
 var https = require('https');
 var well_known_json = require('well-known-json');
 var oada_error = require('oada-error');
 //var oada_ref_auth = require('oada-ref-auth');
 const kf = require('kafka-node');
+const arangojs = require('arangojs');
 
 
 // Local libs:
@@ -44,6 +44,11 @@ producer = producer
     .tap(function(prod) {
         return prod.createTopicsAsync(['token_request'], true);
     });
+
+var db = arangojs({
+    url: 'http://arango:8529'
+});
+var resources = db.collection('resources');
 
 var requests = {};
 consumer.on('message', function(msg) {
@@ -115,7 +120,7 @@ var _server = {
             var reqDone = Promise.fromCallback(function(done) {
                 requests[req.id] = done;
             });
-            producer.then(function sendTokReq(prod) {
+            return producer.then(function sendTokReq(prod) {
                 return prod.sendAsync([{
                     topic: 'token_request',
                     messages: JSON.stringify({
@@ -126,7 +131,7 @@ var _server = {
                 }]);
             })
             .then(function waitTokRes() {
-                return reqDone.timeout(1000);
+                return reqDone.timeout(1000, 'token_request timeout');
             })
             .then(function handleTokRes(resp) {
                 req.user = resp;
@@ -137,9 +142,54 @@ var _server = {
             .asCallback(next);
         });
 
+          // Rewrite the URL if it starts with /bookmarks
+          _server.app.use('/bookmarks', function handleBookmarks(req, res, next) {
+              req.url = req.url.replace(/^\/bookmarks/, req.user.doc.bookmarks)
+              next();
+          });
+
         _server.app.use(function graphHandler(req, res, next) {
             console.log(req.url);
+            var reqDone = Promise.fromCallback(function(done) {
+                requests[req.id] = done;
+            });
+            return producer.then(function sendGraphReq(prod) {
+                return prod.sendAsync([{
+                    topic: 'graph_request',
+                    messages: JSON.stringify({
+                        'token': req.get('authorization'),
+                        'resp_partition': 0, // TODO: Handle partitions
+                        'url': req.url,
+                        'connection_id': req.id
+                    })
+                }]);
+            })
+            .then(function waitGraphRes() {
+                return reqDone.timeout(1000, 'graph_request timeout');
+            })
+            .then(function handleGraphRes(resp) {
+                req.url = resp.url;
+                // TODO: Just use express parameters rather than graph thing?
+                req.oadaGraph = resp;
+            })
+            .finally(function cleanupGraphReq() {
+                delete requests[req.id];
+            })
+            .asCallback(next);
         });
+
+          _server.app.get('/resources', function getResource(req, res) {
+              // TODO: Escaping stuff?
+              var path = req.oadaGraph.path_leftover
+                .split('/')
+                .filter(x => !!x)
+                .join('"]["');
+              path = path ? '["' + path + '"]' : '';
+              return db.query(arangojs.aql`
+                RETURN DOCUMENT(resources/${req.oadaGraph.resouce_id})${path}
+              `)
+              .then(res.json);
+          });
 
         /////////////////////////////////////////////////////////////////
         // Setup the body parser and associated error handler:
