@@ -1,23 +1,22 @@
 'use strict';
 
-var Promise = require('bluebird');
-var express = require('express');
-var express_promise = require('express-promise');
-var uuid = require('uuid');
+const Promise = require('bluebird');
+const express = require('express');
+const expressPromise = require('express-promise');
+const uuid = require('uuid');
 //var _ = require('lodash');
-var body_parser = require('body-parser');
+const bodyParser = require('body-parser');
 //var bunyan = require('bunyan');
 //var content_type_parser = require('content-type');
-var cors = require('cors');
-var https = require('https');
-var well_known_json = require('well-known-json');
-var oada_error = require('oada-error');
+const cors = require('cors');
+const https = require('https');
+const wellKnownJson = require('well-known-json');
+const oadaError = require('oada-error');
 //var oada_ref_auth = require('oada-ref-auth');
 const kf = require('kafka-node');
 const debug = require('debug')('http-handler');
 
-var db = require('./db');
-
+const db = require('./db');
 
 // Local libs:
 /*
@@ -28,7 +27,7 @@ var mediatype_parser = config.libs.mediatype_parser();
 var errors = config.libs.error();
 var log = config.libs.log();
 */
-var client = Promise.promisifyAll(new kf.Client("zookeeper:2181","http-handler"));
+var client = new kf.Client('zookeeper:2181','http-handler');
 var offset = Promise.promisifyAll(new kf.Offset(client));
 var producer = Promise.promisifyAll(new kf.Producer(client, {
     partitionerType: 0 //kf.Producer.PARTITIONER_TYPES.keyed
@@ -50,10 +49,10 @@ var requests = {};
 consumer.on('message', function(msg) {
     var resp = JSON.parse(msg.value);
 
-    var done = requests[resp.connection_id];
+    var done = requests[resp['connection_id']];
 
     offset.commit(msg);
-    
+
     return done && done(null, resp);
 });
 
@@ -62,31 +61,33 @@ var _server = {
 
     // opts.nolisten = true|false // used mainly for testing
     start: function(opts) {
-      return Promise.try(function() {
-        opts = opts || {};
-        debug('-------------------------------------------------------------');
-        debug('Starting server...');
-      }).then(function() {
-        ///////////////////////////////////////////////////
-        // Testing libraries can disable the actual listening
-        // on a port by passing opts.nolisten to start()
-        if (!opts.nolisten) {
-          // Set the port and start the server (HTTPS vs. HTTP)
-          //_server.app.set('port', config.server.port);
-          _server.app.set('port', 80);
-          if(false && config.server.protocol === 'https://') {
-            var s = https.createServer(config.server.certs, _server.app);
-            s.listen(_server.app.get('port'), function() {
-              debug('OADA Test Server started on port ' + _server.app.get('port')
-                  + ' [https]');
-            });
-          } else {
-            _server.app.listen(_server.app.get('port'), function() {
-              debug('OADA Test Server started on port ' + _server.app.get('port'));
-            });
-          }
-        }
-      });
+        return Promise.try(function() {
+            opts = opts || {};
+            debug('----------------------------------------------------------');
+            debug('Starting server...');
+        }).then(function() {
+            ///////////////////////////////////////////////////
+            // Testing libraries can disable the actual listening
+            // on a port by passing opts.nolisten to start()
+            if (!opts.nolisten) {
+                // Set the port and start the server (HTTPS vs. HTTP)
+                //_server.app.set('port', config.server.port);
+                _server.app.set('port', 80);
+                if (false && config.server.protocol === 'https://') {
+                    var s = https
+                        .createServer(config.server.certs, _server.app);
+                    s.listen(_server.app.get('port'), function() {
+                        debug('OADA Test Server started on port ' +
+                                _server.app.get('port') + ' [https]');
+                    });
+                } else {
+                    _server.app.listen(_server.app.get('port'), function() {
+                        debug('OADA Test Server started on port ' +
+                                _server.app.get('port'));
+                    });
+                }
+            }
+        });
     },
 };
 
@@ -95,38 +96,40 @@ var _server = {
 _server.app = express();
 
 // Allow route handlers to return promises:
-_server.app.use(express_promise());
+_server.app.use(expressPromise());
 
 // Log all requests before anything else gets them for debugging:
 _server.app.use(function(req, res, next) {
-  debug('Received request: ' + req.method + ' ' + req.url);
-  debug('req.headers = ', req.headers);
-  debug('req.body = ', req.body);
-  next();
+    debug('Received request: ' + req.method + ' ' + req.url);
+    debug('req.headers = ', req.headers);
+    debug('req.body = ', req.body);
+    next();
 });
 
 // Turn on CORS for all domains, allow the necessary headers
 _server.app.use(cors({
-  exposedHeaders: [ 'x-oada-rev', 'location' ],
+    exposedHeaders: ['x-oada-rev', 'location'],
 }));
 _server.app.options('*', cors());
 
 ////////////////////////////////////////////////////////
 // Configure the OADA well-known handler middleware
-var well_known_handler = well_known_json({
-  headers: {
-    'content-type': 'application/vnd.oada.oada-configuration.1+json',
-  },
+var wellKnownHandler = wellKnownJson({
+    headers: {
+        'content-type': 'application/vnd.oada.oada-configuration.1+json',
+    },
 });
-  //well_known_handler.addResource('oada-configuration', config.oada_configuration);
-_server.app.use(well_known_handler);
+//wellKnownHandler.addResource('oada-configuration', config.oada_configuration);
+_server.app.use(wellKnownHandler);
 
 // Enable the OADA Auth code to handle OAuth2
 /*
 _server.app.use(oada_ref_auth({
-  wkj: well_known_handler,
-  server: config.server,
-  datastores: _.mapValues(config.libs.auth.datastores, function(d) { return d(); }), // invoke each config
+    wkj: wellKnownHandler,
+    server: config.server,
+    datastores: _.mapValues(config.libs.auth.datastores, function(d) {
+        return d(); // invoke each config
+    }),
 }));
 */
 _server.app.use(function requestId(req, res, next) {
@@ -160,11 +163,11 @@ _server.app.use(function tokenHandler(req, res, next) {
     .asCallback(next);
 });
 
-  // Rewrite the URL if it starts with /bookmarks
+// Rewrite the URL if it starts with /bookmarks
 _server.app.use(function handleBookmarks(req, res, next) {
-      req.url = req.url.replace(/^\/bookmarks/, req.user.doc.bookmarks_id);
-      next();
-  });
+    req.url = req.url.replace(/^\/bookmarks/, req.user.doc['bookmarks_id']);
+    next();
+});
 
 _server.app.use(function graphHandler(req, res, next) {
     var reqDone = Promise.fromCallback(function(done) {
@@ -197,11 +200,11 @@ _server.app.use(function graphHandler(req, res, next) {
 
 /////////////////////////////////////////////////////////////////
 // Setup the body parser and associated error handler:
-_server.app.use(body_parser.raw({
-  limit: '10mb',
-  type: function(req) {
-    return mediatype_parser.canParse(req);
-  }
+_server.app.use(bodyParser.raw({
+    limit: '10mb',
+    type: function(req) {
+        return mediatype_parser.canParse(req);
+    }
 }));
 
 _server.app.use('/resources', function getResource(req, res, next) {
@@ -211,15 +214,17 @@ _server.app.use('/resources', function getResource(req, res, next) {
 
     // TODO: Check scope/sharing
     var owned = db
-        .getResource(req.oadaGraph.meta_id, '_owner')
+        .getResource(req.oadaGraph['meta_id'], '_owner')
         .then(function checkOwner(owner) {
             if (owner !== req.user.doc['user_id']) {
-                throw new oada_error.OADAError('Not Authorized', 403);
+                throw new oadaError.OADAError('Not Authorized', 403);
             }
         });
 
-    var doc = db
-        .getResource(req.oadaGraph.resource_id, req.oadaGraph.path_leftover);
+    var doc = db.getResource(
+            req.oadaGraph['resource_id'],
+            req.oadaGraph['path_leftover']
+    );
 
     return Promise
         .join(doc, owned, function(doc) {
@@ -242,15 +247,14 @@ _server.app.use(config.server.path_prefix, resources_handler);
 
 //////////////////////////////////////////////////
 // Default handler for top-level routes not found:
-_server.app.use(function(req, res){
-  throw new oada_error.OADAError('Route not found: ' + req.url, oada_error.codes.NOT_FOUND);
+_server.app.use(function(req) {
+    throw new oadaError
+        .OADAError('Route not found: ' + req.url, oadaError.codes.NOT_FOUND);
 });
 
 ///////////////////////////////////////////////////
 // Use OADA middleware to catch errors and respond
-_server.app.use(oada_error.middleware(debug));
-
-
+_server.app.use(oadaError.middleware(debug));
 
 if (require.main === module) {
     _server.start();
