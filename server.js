@@ -14,8 +14,9 @@ var well_known_json = require('well-known-json');
 var oada_error = require('oada-error');
 //var oada_ref_auth = require('oada-ref-auth');
 const kf = require('kafka-node');
-const arangojs = require('arangojs');
 const debug = require('debug')('http-handler');
+
+var db = require('./db');
 
 
 // Local libs:
@@ -44,10 +45,6 @@ producer = producer
     .tap(function(prod) {
         return prod.createTopicsAsync(['token_request'], true);
     });
-
-var db = arangojs({
-    url: 'http://arango:8529'
-});
 
 var requests = {};
 consumer.on('message', function(msg) {
@@ -214,24 +211,15 @@ _server.app.use('/resources', function getResource(req, res, next) {
 
     // TODO: Check scope/sharing
     var owned = db
-        .query(arangojs.aql`
-            RETURN DOCUMENT(resources/${req.oadaGraph.meta_id})._owner`
-        )
-        .then(function(owner) {
+        .getResource(req.oadaGraph.meta_id, '_owner')
+        .then(function checkOwner(owner) {
             if (owner !== req.user.doc['user_id']) {
-                throw new oada_error.OadaError('Not Authorized', 403);
+                throw new oada_error.OADAError('Not Authorized', 403);
             }
         });
 
-    // TODO: Escaping stuff?
-    var path = req.oadaGraph.path_leftover
-        .split('/')
-        .filter(x => !!x)
-        .join('"]["');
-    path = path ? '["' + path + '"]' : '';
-    var doc = db.query(arangojs.aql`
-        RETURN DOCUMENT(resources/${req.oadaGraph.resouce_id})${path}
-    `);
+    var doc = db
+        .getResource(req.oadaGraph.resource_id, req.oadaGraph.path_leftover);
 
     return Promise
         .join(doc, owned, function(doc) {
