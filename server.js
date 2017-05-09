@@ -27,7 +27,7 @@ var mediatype_parser = config.libs.mediatype_parser();
 var errors = config.libs.error();
 var log = config.libs.log();
 */
-var client = new kf.Client('zookeeper:2181','http-handler');
+var client = new kf.Client('zookeeper:2181', 'http-handler');
 var offset = Promise.promisifyAll(new kf.Offset(client));
 var producer = Promise.promisifyAll(new kf.Producer(client, {
     partitionerType: 0 //kf.Producer.PARTITIONER_TYPES.keyed

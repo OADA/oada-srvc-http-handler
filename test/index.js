@@ -1,6 +1,6 @@
 'use strict';
 
-const Promise = require('bluebird');
+var Promise = require('bluebird');
 const expect = require('chai').expect;
 const request = require('supertest');
 var kf;
@@ -33,7 +33,7 @@ describe('GET /bookmarks/a', function() {
             fromOffset: 'latest'
         }, ['token_request', 'graph_request']));
 
-        client = Promise.promisifyAll(new kf.Client("zookeeper:2181","http-handler"));
+        client = new kf.Client('zookeeper:2181', 'http-handler-test');
 
         producer = Promise.promisifyAll(new kf.Producer(client, {
             partitionerType: 0 //kf.Producer.PARTITIONER_TYPES.keyed
@@ -70,7 +70,7 @@ describe('GET /bookmarks/a', function() {
                     .get('value')
                     .then(JSON.parse)
                     .then(resp => {
-                        id = resp.connection_id;
+                        id = resp['connection_id'];
                         expect(resp.token).to.equal(token);
                     });
             });
