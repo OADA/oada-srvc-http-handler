@@ -51,7 +51,7 @@ consumer.on('message', function(msg) {
 
     var done = requests[resp['connection_id']];
 
-    offset.commit(msg);
+    offset.commit('http-handlers', [msg]);
 
     return done && done(null, resp);
 });
@@ -153,6 +153,11 @@ _server.app.use(function tokenHandler(req, res, next) {
     })
     .then(function waitTokRes() {
         return reqDone.timeout(1000, 'token_request timeout');
+    })
+    .tap(function checkTok(tok) {
+        if (!tok['token_exists']) {
+            throw new oadaError.OADAError('Unauthorized', 401);
+        }
     })
     .then(function handleTokRes(resp) {
         req.user = resp;
