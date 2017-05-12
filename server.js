@@ -12,6 +12,7 @@ const cors = require('cors');
 const https = require('https');
 const wellKnownJson = require('well-known-json');
 const oadaError = require('oada-error');
+const OADAError = oadaError.OADAError;
 //var oada_ref_auth = require('oada-ref-auth');
 const kf = require('kafka-node');
 const debug = require('debug')('http-handler');
@@ -156,7 +157,7 @@ _server.app.use(function tokenHandler(req, res, next) {
     })
     .tap(function checkTok(tok) {
         if (!tok['token_exists']) {
-            throw new oadaError.OADAError('Unauthorized', 401);
+            throw new OADAError('Unauthorized', 401);
         }
     })
     .then(function handleTokRes(resp) {
@@ -212,19 +213,43 @@ _server.app.use(bodyParser.raw({
     }
 }));
 
+// TODO: Is this scope stuff right/good?
+const scopeTypes = {
+    'oada.rocks': [
+        'application/vnd.oada.bookmarks.1+json',
+        'application/vnd.oada.rocks.1+json',
+        'application/vnd.oada.rock.1+json',
+    ]
+};
+function scopePerm(perm, has) {
+    return perm === has || perm === 'all';
+}
 _server.app.use('/resources', function getResource(req, res, next) {
     if (req.method !== 'GET') {
         next(); // Can't get app.get() to work...
     }
 
-    // TODO: Check scope/sharing
-    var owned = db
-        .getResource(req.oadaGraph['meta_id'], '_owner')
-        .then(function checkOwner(owner) {
-            if (owner !== req.user.doc['user_id']) {
-                throw new oadaError.OADAError('Not Authorized', 403);
-            }
+    // TODO: Should it not get the whole meta document?
+    var meta = db.getResource(req.oadaGraph['meta_id']);
+    var owned = meta.get('_owner').then(function checkOwner(owner) {
+        if (owner !== req.user.doc['user_id']) {
+            throw new OADAError('Not Authorized', 403);
+        }
+    });
+    var scoped = meta.get('_contentType').then(function checkScopes(conType) {
+        var allowed = req.user.scope.split(' ').some(function chkScope(scope) {
+            var type;
+            var perm;
+            [type, perm] = scope.split(':');
+
+            return scopeTypes[type].indexOf(conType) >= 0 &&
+                    scopePerm(perm, 'read');
         });
+
+        if (!allowed) {
+            throw new OADAError('Not Authorized', 403);
+        }
+    });
 
     var doc = db.getResource(
             req.oadaGraph['resource_id'],
@@ -232,7 +257,7 @@ _server.app.use('/resources', function getResource(req, res, next) {
     );
 
     return Promise
-        .join(doc, owned, function(doc) {
+        .join(doc, owned, scoped, function(doc) {
             return res.json(doc);
         })
         .catch(next);
