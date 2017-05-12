@@ -56,6 +56,26 @@ consumer.on('message', function(msg) {
 
     return done && done(null, resp);
 });
+// Produce request, cosume response, then resolve to answer
+function kafkaRequest(id, topic, message) {
+    var reqDone = Promise.fromCallback(function(done) {
+        requests[id] = done;
+    });
+    message = Object.assign({}, message, {'connection_id': id});
+
+    return producer.then(function sendKafkaReq(prod) {
+        return prod.sendAsync([{
+            topic: topic,
+            messages: JSON.stringify(message)
+        }]);
+    })
+    .then(function waitKafkaRes() {
+        return reqDone.timeout(1000, topic + ' timeout');
+    })
+    .finally(function cleanupKafkaReq() {
+        delete requests[id];
+    });
+}
 
 var _server = {
     app: null,
@@ -139,21 +159,9 @@ _server.app.use(function requestId(req, res, next) {
 });
 
 _server.app.use(function tokenHandler(req, res, next) {
-    var reqDone = Promise.fromCallback(function(done) {
-        requests[req.id] = done;
-    });
-    return producer.then(function sendTokReq(prod) {
-        return prod.sendAsync([{
-            topic: 'token_request',
-            messages: JSON.stringify({
-                'token': req.get('authorization'),
-                'resp_partition': 0, // TODO: Handle partitions
-                'connection_id': req.id
-            })
-        }]);
-    })
-    .then(function waitTokRes() {
-        return reqDone.timeout(1000, 'token_request timeout');
+    return kafkaRequest(req.id, 'token_request', {
+        'token': req.get('authorization'),
+        'resp_partition': 0, // TODO: Handle partitions
     })
     .tap(function checkTok(tok) {
         if (!tok['token_exists']) {
@@ -176,30 +184,15 @@ _server.app.use(function handleBookmarks(req, res, next) {
 });
 
 _server.app.use(function graphHandler(req, res, next) {
-    var reqDone = Promise.fromCallback(function(done) {
-        requests[req.id] = done;
-    });
-    return producer.then(function sendGraphReq(prod) {
-        return prod.sendAsync([{
-            topic: 'graph_request',
-            messages: JSON.stringify({
-                'token': req.get('authorization'),
-                'resp_partition': 0, // TODO: Handle partitions
-                'url': req.url,
-                'connection_id': req.id
-            })
-        }]);
-    })
-    .then(function waitGraphRes() {
-        return reqDone.timeout(1000, 'graph_request timeout');
+    return kafkaRequest(req.id, 'graph_request', {
+        'token': req.get('authorization'),
+        'resp_partition': 0, // TODO: Handle partitions
+        'url': req.url,
     })
     .then(function handleGraphRes(resp) {
         req.url = resp.url;
         // TODO: Just use express parameters rather than graph thing?
         req.oadaGraph = resp;
-    })
-    .finally(function cleanupGraphReq() {
-        delete requests[req.id];
     })
     .asCallback(next);
 });
