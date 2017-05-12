@@ -61,7 +61,10 @@ function kafkaRequest(id, topic, message) {
     var reqDone = Promise.fromCallback(function(done) {
         requests[id] = done;
     });
-    message = Object.assign({}, message, {'connection_id': id});
+    message = Object.assign({}, message, {
+        'connection_id': id,
+        'resp_partition': 0, // TODO: Handle partitions
+    });
 
     return producer.then(function sendKafkaReq(prod) {
         return prod.sendAsync([{
@@ -161,7 +164,6 @@ _server.app.use(function requestId(req, res, next) {
 _server.app.use(function tokenHandler(req, res, next) {
     return kafkaRequest(req.id, 'token_request', {
         'token': req.get('authorization'),
-        'resp_partition': 0, // TODO: Handle partitions
     })
     .tap(function checkTok(tok) {
         if (!tok['token_exists']) {
@@ -186,7 +188,6 @@ _server.app.use(function handleBookmarks(req, res, next) {
 _server.app.use(function graphHandler(req, res, next) {
     return kafkaRequest(req.id, 'graph_request', {
         'token': req.get('authorization'),
-        'resp_partition': 0, // TODO: Handle partitions
         'url': req.url,
     })
     .then(function handleGraphRes(resp) {
@@ -261,6 +262,35 @@ _server.app.use('/resources', function getResource(req, res, next) {
             return res.json(doc);
         })
         .catch(next);
+});
+_server.app.use('/resources', function getResource(req, res, next) {
+    if (req.method !== 'PUT') {
+        next(); // Can't get app.put() to work...
+    }
+
+    return kafkaRequest(req.id, 'write_request', {
+        url: req.url,
+        'resource_id': req.oadaGraph['resource_id'],
+        'path_leftover': req.oadaGraph['path_leftover'],
+        'meta_id': req.oadaGraph['meta_id'],
+        'user_id': req.user.doc['user_id'],
+        'client_id': req.user.doc['client_id'],
+        'content_type': req.get('Content-Type'),
+        body: req.body
+    })
+    .tap(function checkWrite(resp) {
+        if (resp.code !== 'success') {
+            var err = new OADAError('write failed with code ' + resp.code);
+            return Promise.reject(err);
+        }
+    })
+    .then(function(resp) {
+        return res
+            .set('X-OADA-Rev', resp['_rev'])
+            .location('/resources/' + resp['resource_id'])
+            .sendStatus(204);
+    })
+    .catch(next);
 });
 
 /////////////////////////////////////////////////////////
