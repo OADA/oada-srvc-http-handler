@@ -14,12 +14,16 @@ describe('GET /bookmarks/a', function() {
     const token = 'Bearer FOOBAR';
     const user = '123';
     const bookmarks = '/resources/123';
-    const scope = 'asadasdsads';
+    const scope = 'oada.rocks:all';
     var id;
     var req;
     var res = {
         a: {foo: 'bar'},
         b: 'baz'
+    };
+    var met = {
+        '_owner': user,
+        '_contentType': 'application/vnd.oada.rocks.1+json'
     };
 
     before(function() {
@@ -48,7 +52,7 @@ describe('GET /bookmarks/a', function() {
 
     before(function setupDb() {
         var resource = db.setResource('123', '', res);
-        var meta = db.setResource('456', '', {'_owner': user});
+        var meta = db.setResource('456', '', met);
         return Promise.join(resource, meta);
     });
 

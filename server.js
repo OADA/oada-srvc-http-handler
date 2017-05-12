@@ -237,14 +237,21 @@ _server.app.use('/resources', function getResource(req, res, next) {
         }
     });
     var scoped = meta.get('_contentType').then(function checkScopes(conType) {
-        var allowed = req.user.scope.split(' ').some(function chkScope(scope) {
-            var type;
-            var perm;
-            [type, perm] = scope.split(':');
+        var allowed = req.user.doc.scope
+            .split(' ')
+            .some(function chkScope(scope) {
+                var type;
+                var perm;
+                [type, perm] = scope.split(':');
 
-            return scopeTypes[type].indexOf(conType) >= 0 &&
-                    scopePerm(perm, 'read');
-        });
+                if (!scopeTypes[type]) {
+                    debug('Unsupported scope type "' + type + '"');
+                    return false;
+                }
+
+                return scopeTypes[type].indexOf(conType) >= 0 &&
+                        scopePerm(perm, 'read');
+            });
 
         if (!allowed) {
             throw new OADAError('Not Authorized', 403);
