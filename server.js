@@ -1,50 +1,35 @@
 'use strict';
 
-const Promise = require('bluebird');
+var Promise = require('bluebird');
 const express = require('express');
 const expressPromise = require('express-promise');
 const uuid = require('uuid');
-//var _ = require('lodash');
 const bodyParser = require('body-parser');
-//var bunyan = require('bunyan');
 //var content_type_parser = require('content-type');
 const cors = require('cors');
-const https = require('https');
 const wellKnownJson = require('well-known-json');
 const oadaError = require('oada-error');
 const OADAError = oadaError.OADAError;
-//var oada_ref_auth = require('oada-ref-auth');
 const kf = require('kafka-node');
 const debug = require('debug')('http-handler');
 
 const db = require('./db');
+var config = require('./config');
 
-// Local libs:
-/*
-var bookmarks_handler = config.libs.handlers.bookmarks();
-var resources_handler = config.libs.handlers.resources();
-var meta_handler = config.libs.handlers.meta();
-var mediatype_parser = config.libs.mediatype_parser();
-var errors = config.libs.error();
-var log = config.libs.log();
-*/
-var client = new kf.Client('zookeeper:2181', 'http-handler');
+var client = new kf.Client(config.get('kafka:broker'), 'http-handler');
 var offset = Promise.promisifyAll(new kf.Offset(client));
 var producer = Promise.promisifyAll(new kf.Producer(client, {
     partitionerType: 0 //kf.Producer.PARTITIONER_TYPES.keyed
 }));
-var consumer = Promise.promisifyAll(new kf.ConsumerGroup({
-    host: 'zookeeper:2181',
+var consumer = new kf.ConsumerGroup({
+    host: config.get('kafka:broker'),
     groupId: 'http-handlers',
     fromOffset: 'latest'
-}, ['http_response']));
+}, [config.get('kafka:topics:httpResponse')]);
 
 producer = producer
     .onAsync('ready')
-    .return(producer)
-    .tap(function(prod) {
-        return prod.createTopicsAsync(['token_request'], true);
-    });
+    .return(producer);
 
 var requests = {};
 consumer.on('message', function(msg) {
@@ -84,33 +69,17 @@ var _server = {
     app: null,
 
     // opts.nolisten = true|false // used mainly for testing
-    start: function(opts) {
-        return Promise.try(function() {
-            opts = opts || {};
+    start: function() {
+        return Promise.fromCallback(function(done) {
             debug('----------------------------------------------------------');
             debug('Starting server...');
-        }).then(function() {
-            ///////////////////////////////////////////////////
-            // Testing libraries can disable the actual listening
-            // on a port by passing opts.nolisten to start()
-            if (!opts.nolisten) {
-                // Set the port and start the server (HTTPS vs. HTTP)
-                //_server.app.set('port', config.server.port);
-                _server.app.set('port', 80);
-                if (false && config.server.protocol === 'https://') {
-                    var s = https
-                        .createServer(config.server.certs, _server.app);
-                    s.listen(_server.app.get('port'), function() {
-                        debug('OADA Test Server started on port ' +
-                                _server.app.get('port') + ' [https]');
-                    });
-                } else {
-                    _server.app.listen(_server.app.get('port'), function() {
-                        debug('OADA Test Server started on port ' +
-                                _server.app.get('port'));
-                    });
-                }
-            }
+
+            _server.app.set('port', config.get('server:port'));
+            _server.app.listen(_server.app.get('port'), done);
+        })
+        .tap(() => {
+            debug('OADA Test Server started on port ' +
+                    _server.app.get('port'));
         });
     },
 };
@@ -162,7 +131,7 @@ _server.app.use(function requestId(req, res, next) {
 });
 
 _server.app.use(function tokenHandler(req, res, next) {
-    return kafkaRequest(req.id, 'token_request', {
+    return kafkaRequest(req.id, config.get('kafka:topics:tokenRequest'), {
         'token': req.get('authorization'),
     })
     .tap(function checkTok(tok) {
@@ -186,7 +155,7 @@ _server.app.use(function handleBookmarks(req, res, next) {
 });
 
 _server.app.use(function graphHandler(req, res, next) {
-    return kafkaRequest(req.id, 'graph_request', {
+    return kafkaRequest(req.id, config.get('kafka:topics:graphRequest'), {
         'token': req.get('authorization'),
         'url': req.url,
     })
@@ -277,7 +246,7 @@ _server.app.use('/resources', function putResource(req, res, next) {
         return next(new OADAError('Not Authorized', 403));
     }
 
-    return kafkaRequest(req.id, 'write_request', {
+    return kafkaRequest(req.id, config.get('kafka:topics:writeRequest'), {
         url: req.url,
         'resource_id': req.oadaGraph['resource_id'],
         'path_leftover': req.oadaGraph['path_leftover'],
