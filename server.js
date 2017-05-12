@@ -12,6 +12,7 @@ const cors = require('cors');
 const https = require('https');
 const wellKnownJson = require('well-known-json');
 const oadaError = require('oada-error');
+const OADAError = oadaError.OADAError;
 //var oada_ref_auth = require('oada-ref-auth');
 const kf = require('kafka-node');
 const debug = require('debug')('http-handler');
@@ -27,7 +28,7 @@ var mediatype_parser = config.libs.mediatype_parser();
 var errors = config.libs.error();
 var log = config.libs.log();
 */
-var client = new kf.Client('zookeeper:2181','http-handler');
+var client = new kf.Client('zookeeper:2181', 'http-handler');
 var offset = Promise.promisifyAll(new kf.Offset(client));
 var producer = Promise.promisifyAll(new kf.Producer(client, {
     partitionerType: 0 //kf.Producer.PARTITIONER_TYPES.keyed
@@ -55,6 +56,29 @@ consumer.on('message', function(msg) {
 
     return done && done(null, resp);
 });
+// Produce request, cosume response, then resolve to answer
+function kafkaRequest(id, topic, message) {
+    var reqDone = Promise.fromCallback(function(done) {
+        requests[id] = done;
+    });
+    message = Object.assign({}, message, {
+        'connection_id': id,
+        'resp_partition': 0, // TODO: Handle partitions
+    });
+
+    return producer.then(function sendKafkaReq(prod) {
+        return prod.sendAsync([{
+            topic: topic,
+            messages: JSON.stringify(message)
+        }]);
+    })
+    .then(function waitKafkaRes() {
+        return reqDone.timeout(1000, topic + ' timeout');
+    })
+    .finally(function cleanupKafkaReq() {
+        delete requests[id];
+    });
+}
 
 var _server = {
     app: null,
@@ -138,25 +162,12 @@ _server.app.use(function requestId(req, res, next) {
 });
 
 _server.app.use(function tokenHandler(req, res, next) {
-    var reqDone = Promise.fromCallback(function(done) {
-        requests[req.id] = done;
-    });
-    return producer.then(function sendTokReq(prod) {
-        return prod.sendAsync([{
-            topic: 'token_request',
-            messages: JSON.stringify({
-                'token': req.get('authorization'),
-                'resp_partition': 0, // TODO: Handle partitions
-                'connection_id': req.id
-            })
-        }]);
-    })
-    .then(function waitTokRes() {
-        return reqDone.timeout(1000, 'token_request timeout');
+    return kafkaRequest(req.id, 'token_request', {
+        'token': req.get('authorization'),
     })
     .tap(function checkTok(tok) {
         if (!tok['token_exists']) {
-            throw new oadaError.OADAError('Unauthorized', 401);
+            throw new OADAError('Unauthorized', 401);
         }
     })
     .then(function handleTokRes(resp) {
@@ -175,30 +186,14 @@ _server.app.use(function handleBookmarks(req, res, next) {
 });
 
 _server.app.use(function graphHandler(req, res, next) {
-    var reqDone = Promise.fromCallback(function(done) {
-        requests[req.id] = done;
-    });
-    return producer.then(function sendGraphReq(prod) {
-        return prod.sendAsync([{
-            topic: 'graph_request',
-            messages: JSON.stringify({
-                'token': req.get('authorization'),
-                'resp_partition': 0, // TODO: Handle partitions
-                'url': req.url,
-                'connection_id': req.id
-            })
-        }]);
-    })
-    .then(function waitGraphRes() {
-        return reqDone.timeout(1000, 'graph_request timeout');
+    return kafkaRequest(req.id, 'graph_request', {
+        'token': req.get('authorization'),
+        'url': req.url,
     })
     .then(function handleGraphRes(resp) {
         req.url = resp.url;
         // TODO: Just use express parameters rather than graph thing?
         req.oadaGraph = resp;
-    })
-    .finally(function cleanupGraphReq() {
-        delete requests[req.id];
     })
     .asCallback(next);
 });
@@ -212,17 +207,53 @@ _server.app.use(bodyParser.raw({
     }
 }));
 
-_server.app.use('/resources', function getResource(req, res, next) {
-    if (req.method !== 'GET') {
-        next(); // Can't get app.get() to work...
+// TODO: Is this scope stuff right/good?
+function checkScopes(scope, contentType) {
+    const scopeTypes = {
+        'oada.rocks': [
+            'application/vnd.oada.bookmarks.1+json',
+            'application/vnd.oada.rocks.1+json',
+            'application/vnd.oada.rock.1+json',
+        ]
+    };
+    function scopePerm(perm, has) {
+        return perm === has || perm === 'all';
     }
 
-    // TODO: Check scope/sharing
-    var owned = db
-        .getResource(req.oadaGraph['meta_id'], '_owner')
-        .then(function checkOwner(owner) {
-            if (owner !== req.user.doc['user_id']) {
-                throw new oadaError.OADAError('Not Authorized', 403);
+    return scope
+        .split(' ')
+        .some(function chkScope(scope) {
+            var type;
+            var perm;
+            [type, perm] = scope.split(':');
+
+            if (!scopeTypes[type]) {
+                debug('Unsupported scope type "' + type + '"');
+                return false;
+            }
+
+            return scopeTypes[type].indexOf(contentType) >= 0 &&
+                    scopePerm(perm, 'read');
+        });
+}
+_server.app.use('/resources', function getResource(req, res, next) {
+    if (req.method !== 'GET') {
+        return next(); // Can't get app.get() to work...
+    }
+
+    // TODO: Should it not get the whole meta document?
+    var meta = db.getResource(req.oadaGraph['meta_id']);
+    var owned = meta.get('_owner').then(function checkOwner(owner) {
+        if (owner !== req.user.doc['user_id']) {
+            throw new OADAError('Not Authorized', 403);
+        }
+    });
+    var scoped = meta
+        .get('_contentType')
+        .then(checkScopes.bind(null, req.user.doc.scope))
+        .then(function scopesAllowed(allowed) {
+            if (!allowed) {
+                return Promise.reject(new OADAError('Not Authorized', 403));
             }
         });
 
@@ -232,10 +263,43 @@ _server.app.use('/resources', function getResource(req, res, next) {
     );
 
     return Promise
-        .join(doc, owned, function(doc) {
+        .join(doc, owned, scoped, function(doc) {
             return res.json(doc);
         })
         .catch(next);
+});
+_server.app.use('/resources', function putResource(req, res, next) {
+    if (req.method !== 'PUT') {
+        return next(); // Can't get app.put() to work...
+    }
+
+    if (!checkScopes(req.user.doc.scope, req.get('Content-Type'))) {
+        return next(new OADAError('Not Authorized', 403));
+    }
+
+    return kafkaRequest(req.id, 'write_request', {
+        url: req.url,
+        'resource_id': req.oadaGraph['resource_id'],
+        'path_leftover': req.oadaGraph['path_leftover'],
+        'meta_id': req.oadaGraph['meta_id'],
+        'user_id': req.user.doc['user_id'],
+        'client_id': req.user.doc['client_id'],
+        'content_type': req.get('Content-Type'),
+        body: req.body
+    })
+    .tap(function checkWrite(resp) {
+        if (resp.code !== 'success') {
+            var err = new OADAError('write failed with code ' + resp.code);
+            return Promise.reject(err);
+        }
+    })
+    .then(function(resp) {
+        return res
+            .set('X-OADA-Rev', resp['_rev'])
+            .location('/resources/' + resp['resource_id'])
+            .sendStatus(204);
+    })
+    .catch(next);
 });
 
 /////////////////////////////////////////////////////////

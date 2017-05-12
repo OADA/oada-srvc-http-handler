@@ -1,6 +1,6 @@
 'use strict';
 
-const Promise = require('bluebird');
+var Promise = require('bluebird');
 const mock = require('mock-require');
 
 var resources = {};

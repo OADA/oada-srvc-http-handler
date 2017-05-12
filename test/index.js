@@ -1,6 +1,6 @@
 'use strict';
 
-const Promise = require('bluebird');
+var Promise = require('bluebird');
 const expect = require('chai').expect;
 const request = require('supertest');
 var kf;
@@ -14,12 +14,16 @@ describe('GET /bookmarks/a', function() {
     const token = 'Bearer FOOBAR';
     const user = '123';
     const bookmarks = '/resources/123';
-    const scope = 'asadasdsads';
+    const scope = 'oada.rocks:all';
     var id;
     var req;
     var res = {
         a: {foo: 'bar'},
         b: 'baz'
+    };
+    var met = {
+        '_owner': user,
+        '_contentType': 'application/vnd.oada.rocks.1+json'
     };
 
     before(function() {
@@ -33,7 +37,7 @@ describe('GET /bookmarks/a', function() {
             fromOffset: 'latest'
         }, ['token_request', 'graph_request']));
 
-        client = Promise.promisifyAll(new kf.Client("zookeeper:2181","http-handler"));
+        client = new kf.Client('zookeeper:2181', 'http-handler-test');
 
         producer = Promise.promisifyAll(new kf.Producer(client, {
             partitionerType: 0 //kf.Producer.PARTITIONER_TYPES.keyed
@@ -48,7 +52,7 @@ describe('GET /bookmarks/a', function() {
 
     before(function setupDb() {
         var resource = db.setResource('123', '', res);
-        var meta = db.setResource('456', '', {'_owner': user});
+        var meta = db.setResource('456', '', met);
         return Promise.join(resource, meta);
     });
 
@@ -70,7 +74,7 @@ describe('GET /bookmarks/a', function() {
                     .get('value')
                     .then(JSON.parse)
                     .then(resp => {
-                        id = resp.connection_id;
+                        id = resp['connection_id'];
                         expect(resp.token).to.equal(token);
                     });
             });
@@ -88,6 +92,7 @@ describe('GET /bookmarks/a', function() {
                             messages: JSON.stringify({
                                 'connection_id': id,
                                 token: token,
+                                'token_exists': true,
                                 doc: {
                                     'user_id': not ? user + 'x' : user,
                                     'bookmarks_id': bookmarks,

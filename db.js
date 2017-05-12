@@ -20,3 +20,7 @@ exports.getReource = function getResource(id, path) {
         RETURN DOCUMENT(resources/${id})${path}
     `);
 };
+
+exports.setResource = function setResource(id, path, val) {
+    // TODO: Wait for abalmos library to implement this
+}
