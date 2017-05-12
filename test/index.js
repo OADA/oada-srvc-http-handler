@@ -10,11 +10,13 @@ var client;
 var producer;
 var db;
 
+var config = require('../config');
+
 describe('GET /bookmarks/a', function() {
     const token = 'Bearer FOOBAR';
     const user = '123';
     const bookmarks = '/resources/123';
-    const scope = 'oada.rocks:all';
+    const scope = ['oada.rocks:all'];
     var id;
     var req;
     var res = {
@@ -31,23 +33,23 @@ describe('GET /bookmarks/a', function() {
         app = require('../').app;
         db = require('../db');
 
-        consumer = Promise.promisifyAll(new kf.ConsumerGroup({
-            host: 'zookeeper:2181',
+        consumer = new kf.ConsumerGroup({
+            host: config.get('kafka:broker'),
             groupId: 'test',
             fromOffset: 'latest'
-        }, ['token_request', 'graph_request']));
+        }, [
+            config.get('kafka:topics:tokenRequest'),
+            config.get('kafka:topics:graphRequest')
+        ]);
 
-        client = new kf.Client('zookeeper:2181', 'http-handler-test');
+        client = new kf.Client(config.get('kafka:broker'), 'http-handler-test');
 
         producer = Promise.promisifyAll(new kf.Producer(client, {
             partitionerType: 0 //kf.Producer.PARTITIONER_TYPES.keyed
         }));
         producer = producer
             .onAsync('ready')
-            .return(producer)
-            .tap(function(prod) {
-                return prod.createTopicsAsync(['http_response'], true);
-            });
+            .return(producer);
     });
 
     before(function setupDb() {
@@ -88,7 +90,7 @@ describe('GET /bookmarks/a', function() {
                 return producer
                     .then(function(prod) {
                         return prod.sendAsync([{
-                            topic: 'http_response',
+                            topic: config.get('kafka:topics:httpResponse'),
                             messages: JSON.stringify({
                                 'connection_id': id,
                                 token: token,
@@ -116,7 +118,7 @@ describe('GET /bookmarks/a', function() {
                 return producer
                     .then(function(prod) {
                         return prod.sendAsync([{
-                            topic: 'http_response',
+                            topic: config.get('kafka:topics:httpResponse'),
                             messages: JSON.stringify({
                                 'connection_id': id,
                                 'token': token,
