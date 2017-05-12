@@ -16,7 +16,7 @@ describe('GET /bookmarks/a', function() {
     const token = 'Bearer FOOBAR';
     const user = '123';
     const bookmarks = '/resources/123';
-    const scope = 'oada.rocks:all';
+    const scope = ['oada.rocks:all'];
     var id;
     var req;
     var res = {

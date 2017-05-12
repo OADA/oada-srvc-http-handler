@@ -189,21 +189,19 @@ function checkScopes(scope, contentType) {
         return perm === has || perm === 'all';
     }
 
-    return scope
-        .split(' ')
-        .some(function chkScope(scope) {
-            var type;
-            var perm;
-            [type, perm] = scope.split(':');
+    return scope.some(function chkScope(scope) {
+        var type;
+        var perm;
+        [type, perm] = scope.split(':');
 
-            if (!scopeTypes[type]) {
-                debug('Unsupported scope type "' + type + '"');
-                return false;
-            }
+        if (!scopeTypes[type]) {
+            debug('Unsupported scope type "' + type + '"');
+            return false;
+        }
 
-            return scopeTypes[type].indexOf(contentType) >= 0 &&
-                    scopePerm(perm, 'read');
-        });
+        return scopeTypes[type].indexOf(contentType) >= 0 &&
+                scopePerm(perm, 'read');
+    });
 }
 _server.app.use('/resources', function getResource(req, res, next) {
     if (req.method !== 'GET') {
