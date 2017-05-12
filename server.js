@@ -208,19 +208,37 @@ _server.app.use(bodyParser.raw({
 }));
 
 // TODO: Is this scope stuff right/good?
-const scopeTypes = {
-    'oada.rocks': [
-        'application/vnd.oada.bookmarks.1+json',
-        'application/vnd.oada.rocks.1+json',
-        'application/vnd.oada.rock.1+json',
-    ]
-};
-function scopePerm(perm, has) {
-    return perm === has || perm === 'all';
+function checkScopes(scope, contentType) {
+    const scopeTypes = {
+        'oada.rocks': [
+            'application/vnd.oada.bookmarks.1+json',
+            'application/vnd.oada.rocks.1+json',
+            'application/vnd.oada.rock.1+json',
+        ]
+    };
+    function scopePerm(perm, has) {
+        return perm === has || perm === 'all';
+    }
+
+    return scope
+        .split(' ')
+        .some(function chkScope(scope) {
+            var type;
+            var perm;
+            [type, perm] = scope.split(':');
+
+            if (!scopeTypes[type]) {
+                debug('Unsupported scope type "' + type + '"');
+                return false;
+            }
+
+            return scopeTypes[type].indexOf(contentType) >= 0 &&
+                    scopePerm(perm, 'read');
+        });
 }
 _server.app.use('/resources', function getResource(req, res, next) {
     if (req.method !== 'GET') {
-        next(); // Can't get app.get() to work...
+        return next(); // Can't get app.get() to work...
     }
 
     // TODO: Should it not get the whole meta document?
@@ -230,27 +248,14 @@ _server.app.use('/resources', function getResource(req, res, next) {
             throw new OADAError('Not Authorized', 403);
         }
     });
-    var scoped = meta.get('_contentType').then(function checkScopes(conType) {
-        var allowed = req.user.doc.scope
-            .split(' ')
-            .some(function chkScope(scope) {
-                var type;
-                var perm;
-                [type, perm] = scope.split(':');
-
-                if (!scopeTypes[type]) {
-                    debug('Unsupported scope type "' + type + '"');
-                    return false;
-                }
-
-                return scopeTypes[type].indexOf(conType) >= 0 &&
-                        scopePerm(perm, 'read');
-            });
-
-        if (!allowed) {
-            throw new OADAError('Not Authorized', 403);
-        }
-    });
+    var scoped = meta
+        .get('_contentType')
+        .then(checkScopes.bind(null, req.user.doc.scope))
+        .then(function scopesAllowed(allowed) {
+            if (!allowed) {
+                return Promise.reject(new OADAError('Not Authorized', 403));
+            }
+        });
 
     var doc = db.getResource(
             req.oadaGraph['resource_id'],
@@ -263,9 +268,13 @@ _server.app.use('/resources', function getResource(req, res, next) {
         })
         .catch(next);
 });
-_server.app.use('/resources', function getResource(req, res, next) {
+_server.app.use('/resources', function putResource(req, res, next) {
     if (req.method !== 'PUT') {
-        next(); // Can't get app.put() to work...
+        return next(); // Can't get app.put() to work...
+    }
+
+    if (!checkScopes(req.user.doc.scope, req.get('Content-Type'))) {
+        return next(new OADAError('Not Authorized', 403));
     }
 
     return kafkaRequest(req.id, 'write_request', {
