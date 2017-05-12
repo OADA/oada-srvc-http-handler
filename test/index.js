@@ -88,6 +88,7 @@ describe('GET /bookmarks/a', function() {
                             messages: JSON.stringify({
                                 'connection_id': id,
                                 token: token,
+                                'token_exists': true,
                                 doc: {
                                     'user_id': not ? user + 'x' : user,
                                     'bookmarks_id': bookmarks,
