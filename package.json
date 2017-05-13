@@ -28,6 +28,7 @@
     "kafka-node": "^1.6.0",
     "nconf": "^0.8.4",
     "oada-error": "^1.1.1",
+    "oada-lib-arangodb": "oada/oada-lib-arangodb",
     "oada-lib-config": "github:oada/oada-lib-config",
     "uuid": "^3.0.1",
     "well-known-json": "^0.2.0"

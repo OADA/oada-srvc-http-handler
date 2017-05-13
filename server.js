@@ -1,6 +1,7 @@
 'use strict';
 
 var Promise = require('bluebird');
+const oadaLib = require('oada-lib-arangodb');
 const express = require('express');
 const expressPromise = require('express-promise');
 const uuid = require('uuid');
@@ -160,7 +161,7 @@ _server.app.use(function graphHandler(req, res, next) {
         'url': req.url,
     })
     .then(function handleGraphRes(resp) {
-        req.url = resp.url;
+        req.url = `/resources/${resp.url}`;
         // TODO: Just use express parameters rather than graph thing?
         req.oadaGraph = resp;
     })
@@ -189,6 +190,8 @@ function checkScopes(scope, contentType) {
         return perm === has || perm === 'all';
     }
 
+  console.log(scope);
+
     return scope.some(function chkScope(scope) {
         var type;
         var perm;
@@ -209,28 +212,41 @@ _server.app.use('/resources', function getResource(req, res, next) {
     }
 
     // TODO: Should it not get the whole meta document?
-    var meta = db.getResource(req.oadaGraph['meta_id']);
-    var owned = meta.get('_owner').then(function checkOwner(owner) {
-        if (owner !== req.user.doc['user_id']) {
-            throw new OADAError('Not Authorized', 403);
-        }
-    });
-    var scoped = meta
-        .get('_contentType')
-        .then(checkScopes.bind(null, req.user.doc.scope))
-        .then(function scopesAllowed(allowed) {
-            if (!allowed) {
-                return Promise.reject(new OADAError('Not Authorized', 403));
+    // TODO: Make getResource accept an array of paths and return an array of
+    //       results. I think we can do that in one arango query
+    var owned = oadaLib.resources.getResource(req.oadaGraph['resource_id'],
+        '_meta/_owner')
+        .call('next')
+        .then(function checkOwner(owner) {
+          console.log(owner)
+          console.log(req.user.doc);
+            if (owner !== req.user.doc['user_id']) {
+                throw new OADAError('Not Authorized', 403);
             }
         });
 
-    var doc = db.getResource(
+    console.log(req.user.doc)
+    var scoped = oadaLib.resources.getResource(req.oadaGraph['resource_id'],
+        '_meta/_type')
+          .call('next')
+          .then(checkScopes.bind(null, req.user.doc.scope))
+          .then(function scopesAllowed(allowed) {
+            console.log('******: ', allowed)
+              if (!allowed) {
+                  throw new OADAError('Not Authorized', 403);
+              }
+        });
+
+    var doc = oadaLib.resources.getResource(
             req.oadaGraph['resource_id'],
             req.oadaGraph['path_leftover']
     );
 
     return Promise
         .join(doc, owned, scoped, function(doc) {
+            return doc.next();
+        })
+        .then(function returnDoc(doc) {
             return res.json(doc);
         })
         .catch(next);

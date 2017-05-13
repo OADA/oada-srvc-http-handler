@@ -8,9 +8,9 @@ var db = arangojs({
     url: 'http://arango:8529'
 });
 
-exports.getReource = function getResource(id, path) {
+exports.getResource = function getResource(id, path) {
     // TODO: Escaping stuff?
-    path = path
+    path = (path||'')
         .split('/')
         .filter(x => !!x)
         .join('"]["');
