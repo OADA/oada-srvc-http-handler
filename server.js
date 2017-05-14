@@ -151,7 +151,8 @@ _server.app.use(function tokenHandler(req, res, next) {
 
 // Rewrite the URL if it starts with /bookmarks
 _server.app.use(function handleBookmarks(req, res, next) {
-    req.url = req.url.replace(/^\/bookmarks/, req.user.doc['bookmarks_id']);
+    req.url = req.url.replace(/^\/bookmarks/,
+      `/resources/${req.user.doc['bookmarks_id']}`);
     next();
 });
 
@@ -190,8 +191,6 @@ function checkScopes(scope, contentType) {
         return perm === has || perm === 'all';
     }
 
-  console.log(scope);
-
     return scope.some(function chkScope(scope) {
         var type;
         var perm;
@@ -218,20 +217,16 @@ _server.app.use('/resources', function getResource(req, res, next) {
         '_meta/_owner')
         .call('next')
         .then(function checkOwner(owner) {
-          console.log(owner)
-          console.log(req.user.doc);
             if (owner !== req.user.doc['user_id']) {
                 throw new OADAError('Not Authorized', 403);
             }
         });
 
-    console.log(req.user.doc)
     var scoped = oadaLib.resources.getResource(req.oadaGraph['resource_id'],
         '_meta/_type')
           .call('next')
           .then(checkScopes.bind(null, req.user.doc.scope))
           .then(function scopesAllowed(allowed) {
-            console.log('******: ', allowed)
               if (!allowed) {
                   throw new OADAError('Not Authorized', 403);
               }
@@ -247,10 +242,35 @@ _server.app.use('/resources', function getResource(req, res, next) {
             return doc.next();
         })
         .then(function returnDoc(doc) {
-            return res.json(doc);
+          if(!doc) {
+            throw new OADAError('Not Found', 404);
+          }
+
+          return res.json(unflattenMeta(doc));
         })
         .catch(next);
 });
+
+// TODO: This was a quick make it work. Do what you want with it.
+function unflattenMeta(doc) {
+  Object.keys(doc).forEach((key) => {
+    let t = {};
+    if(doc[key]._id) {
+      if(doc[key]._oada_rev) {
+        doc[key] = {_id: doc[key]._id, _oada_rev: doc[key]._oada_rev};
+      } else {
+        doc[key] = {_id: doc[key]._id};
+      }
+    } else {
+      if(typeof doc[key] === 'object') {
+        doc[key] = unflattenMeta(doc[key]);
+      }
+    }
+  })
+
+  return doc;
+}
+
 _server.app.use('/resources', function putResource(req, res, next) {
     if (req.method !== 'PUT') {
         return next(); // Can't get app.put() to work...

@@ -1027,7 +1027,7 @@ oada-error@^1.1.1:
 
 oada-lib-arangodb@oada/oada-lib-arangodb:
   version "0.0.2"
-  resolved "https://codeload.github.com/oada/oada-lib-arangodb/tar.gz/9bf27e2042d19acb6835c844a6e4f5b0165e70f6"
+  resolved "https://codeload.github.com/oada/oada-lib-arangodb/tar.gz/07a61372f6b6b4e6d88569c5950d2f4b87b3364a"
   dependencies:
     arangojs "^5.6.1"
     bcryptjs "^2.4.3"
@@ -1046,7 +1046,7 @@ oada-lib-arangodb@oada/oada-lib-arangodb:
 
 "oada-lib-config@github:oada/oada-lib-config", oada-lib-config@oada/oada-lib-config:
   version "0.0.1"
-  resolved "https://codeload.github.com/oada/oada-lib-config/tar.gz/36b9a4011b5a7cf2e4e6a057040b4a6c3580cf93"
+  resolved "https://codeload.github.com/oada/oada-lib-config/tar.gz/05513cd3337d5602d9305f65bb50ba668eadbbe6"
   dependencies:
     nconf "^0.8.4"
 
