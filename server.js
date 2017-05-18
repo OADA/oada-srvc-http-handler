@@ -14,7 +14,6 @@ const OADAError = oadaError.OADAError;
 const kf = require('kafka-node');
 const debug = require('debug')('http-handler');
 
-const db = require('./db');
 var config = require('./config');
 
 var client = new kf.Client(config.get('kafka:broker'), 'http-handler');

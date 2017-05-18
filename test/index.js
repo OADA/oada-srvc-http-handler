@@ -15,23 +15,23 @@ var config = require('../config');
 describe('GET /bookmarks/a', function() {
     const token = 'Bearer FOOBAR';
     const user = '123';
-    const bookmarks = '/resources/123';
+    const bookmarks = '123';
     const scope = ['oada.rocks:all'];
     var id;
     var req;
     var res = {
+        '_meta': {
+            '_owner': user,
+            '_type': 'application/vnd.oada.rocks.1+json'
+        },
         a: {foo: 'bar'},
         b: 'baz'
-    };
-    var met = {
-        '_owner': user,
-        '_contentType': 'application/vnd.oada.rocks.1+json'
     };
 
     before(function() {
         kf = require('kafka-node');
         app = require('../').app;
-        db = require('../db');
+        db = require('oada-lib-arangodb');
 
         consumer = new kf.ConsumerGroup({
             host: config.get('kafka:broker'),
@@ -53,9 +53,7 @@ describe('GET /bookmarks/a', function() {
     });
 
     before(function setupDb() {
-        var resource = db.setResource('123', '', res);
-        var meta = db.setResource('456', '', met);
-        return Promise.join(resource, meta);
+        return db.resources.setResource('123', '', res);
     });
 
     ['', 'not'].forEach(function(not) {
@@ -108,8 +106,8 @@ describe('GET /bookmarks/a', function() {
                             .get('value')
                             .then(JSON.parse)
                             .then(resp => {
-                                expect(resp.url)
-                                    .to.match(RegExp('^' + bookmarks));
+                                expect(resp.url).to
+                                    .match(RegExp('^/resources/' + bookmarks));
                             });
                     });
             });
