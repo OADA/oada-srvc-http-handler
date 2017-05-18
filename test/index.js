@@ -1,5 +1,7 @@
 'use strict';
 
+/*global step */
+
 var Promise = require('bluebird');
 const expect = require('chai').expect;
 const request = require('supertest');
@@ -28,7 +30,7 @@ describe('GET /bookmarks/a', function() {
         b: 'baz'
     };
 
-    before(function() {
+    before(function setupKafka() {
         kf = require('kafka-node');
         app = require('../').app;
         db = require('oada-lib-arangodb');
@@ -50,6 +52,8 @@ describe('GET /bookmarks/a', function() {
         producer = producer
             .onAsync('ready')
             .return(producer);
+
+        return Promise.fromCallback(done => consumer.on('connect', done));
     });
 
     before(function setupDb() {

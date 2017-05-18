@@ -28,10 +28,16 @@ before(function mockKafka() {
 
         ConsumerGroup: function MockConsumerGroup(opts, topics) {
             this.on = function(ev, cb) {
-                if (ev === 'message') {
-                    topics.forEach(function(topic) {
-                        cbs[topic] = cb;
-                    });
+                switch (ev) {
+                    case 'message':
+                        topics.forEach(function(topic) {
+                            cbs[topic] = cb;
+                        });
+                        break;
+                    case 'connect':
+                        setTimeout(cb);
+                        break;
+                    default:
                 }
             };
         },
