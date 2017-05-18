@@ -6,7 +6,6 @@ const express = require('express');
 const expressPromise = require('express-promise');
 const uuid = require('uuid');
 const bodyParser = require('body-parser');
-//var content_type_parser = require('content-type');
 const cors = require('cors');
 const wellKnownJson = require('well-known-json');
 const oadaError = require('oada-error');
@@ -170,11 +169,8 @@ _server.app.use(function graphHandler(req, res, next) {
 
 /////////////////////////////////////////////////////////////////
 // Setup the body parser and associated error handler:
-_server.app.use(bodyParser.raw({
+_server.app.use(bodyParser.json({
     limit: '10mb',
-    type: function(req) {
-        return mediatype_parser.canParse(req);
-    }
 }));
 
 // TODO: Is this scope stuff right/good?
@@ -204,16 +200,12 @@ function checkScopes(scope, contentType) {
                 scopePerm(perm, 'read');
     });
 }
-_server.app.use('/resources', function getResource(req, res, next) {
-    if (req.method !== 'GET') {
-        return next(); // Can't get app.get() to work...
-    }
-
+_server.app.get('/resources/*', function getResource(req, res, next) {
     // TODO: Should it not get the whole meta document?
     // TODO: Make getResource accept an array of paths and return an array of
     //       results. I think we can do that in one arango query
-    var owned = oadaLib.resources.getResource(req.oadaGraph['resource_id'],
-        '_meta/_owner')
+    var owned = oadaLib.resources
+        .getResource(req.oadaGraph['resource_id'], '_meta/_owner')
         .call('next')
         .then(function checkOwner(owner) {
             if (owner !== req.user.doc['user_id']) {
@@ -221,14 +213,14 @@ _server.app.use('/resources', function getResource(req, res, next) {
             }
         });
 
-    var scoped = oadaLib.resources.getResource(req.oadaGraph['resource_id'],
-        '_meta/_type')
-          .call('next')
-          .then(checkScopes.bind(null, req.user.doc.scope))
-          .then(function scopesAllowed(allowed) {
-              if (!allowed) {
-                  throw new OADAError('Not Authorized', 403);
-              }
+    var scoped = oadaLib.resources
+        .getResource(req.oadaGraph['resource_id'], '_meta/_type')
+        .call('next')
+        .then(checkScopes.bind(null, req.user.doc.scope))
+        .then(function scopesAllowed(allowed) {
+            if (!allowed) {
+                throw new OADAError('Not Authorized', 403);
+            }
         });
 
     var doc = oadaLib.resources.getResource(
@@ -241,40 +233,38 @@ _server.app.use('/resources', function getResource(req, res, next) {
             return doc.next();
         })
         .then(function returnDoc(doc) {
-          if(!doc) {
-            throw new OADAError('Not Found', 404);
-          }
+            if (!doc) {
+                throw new OADAError('Not Found', 404);
+            }
 
-          return res.json(unflattenMeta(doc));
+            return res.json(unflattenMeta(doc));
         })
         .catch(next);
 });
 
 // TODO: This was a quick make it work. Do what you want with it.
 function unflattenMeta(doc) {
-  Object.keys(doc).forEach((key) => {
-    let t = {};
-    if(doc[key]._id) {
-      if(doc[key]._oada_rev) {
-        doc[key] = {_id: doc[key]._id, _oada_rev: doc[key]._oada_rev};
-      } else {
-        doc[key] = {_id: doc[key]._id};
-      }
-    } else {
-      if(typeof doc[key] === 'object') {
-        doc[key] = unflattenMeta(doc[key]);
-      }
-    }
-  })
+    Object.keys(doc).forEach((key) => {
+        if (doc[key]._id) {
+            if (doc[key]['_oada_rev']) {
+                doc[key] = {
+                    '_id': doc[key]._id,
+                    '_oada_rev': doc[key]['_oada_rev']
+                };
+            } else {
+                doc[key] = {_id: doc[key]._id};
+            }
+        } else {
+            if (typeof doc[key] === 'object') {
+                doc[key] = unflattenMeta(doc[key]);
+            }
+        }
+    });
 
-  return doc;
+    return doc;
 }
 
-_server.app.use('/resources', function putResource(req, res, next) {
-    if (req.method !== 'PUT') {
-        return next(); // Can't get app.put() to work...
-    }
-
+_server.app.put('/resources/*', function putResource(req, res, next) {
     if (!checkScopes(req.user.doc.scope, req.get('Content-Type'))) {
         return next(new OADAError('Not Authorized', 403));
     }
