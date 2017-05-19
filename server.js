@@ -160,7 +160,7 @@ _server.app.use(function graphHandler(req, res, next) {
         'url': req.url,
     })
     .then(function handleGraphRes(resp) {
-        req.url = `/resources/${resp.url}`;
+        req.url = `/resources/${resp['resource_id']}`;
         // TODO: Just use express parameters rather than graph thing?
         req.oadaGraph = resp;
     })
